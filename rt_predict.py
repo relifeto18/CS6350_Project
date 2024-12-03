@@ -1,7 +1,10 @@
+import warnings
 import pandas as pd
 from sklearn.metrics import roc_auc_score
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split, GridSearchCV
+
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 def preprocess_data(data):
     # Replace '?' with NaN to mark missing values

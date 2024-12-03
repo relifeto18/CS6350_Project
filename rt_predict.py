@@ -63,7 +63,7 @@ def main():
     grid_search = GridSearchCV(estimator=rf_model, param_grid=param_grid, 
                             scoring='roc_auc',    # Use AUC as the evaluation metric
                             cv=5,                # 5-fold cross-validation
-                            verbose=2,           # Print progress for each combination
+                            verbose=1,           # Print progress for each combination
                             n_jobs=-1)           # Use all available CPU cores for parallel processing
 
     # Fit GridSearchCV on the training data

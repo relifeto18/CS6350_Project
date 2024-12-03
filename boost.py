@@ -1,7 +1,10 @@
+import warnings
 import pandas as pd
 import xgboost as xgb
-from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score, make_scorer
+from sklearn.model_selection import train_test_split, GridSearchCV
+
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 def preprocess_data(data):
     # Replace '?' with NaN to mark missing values
@@ -43,25 +46,45 @@ def main():
     X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
     
     # Define the XGBoost model
-    xgb_model = xgb.XGBClassifier(n_estimators=400, learning_rate=0.05, max_depth=5, random_state=42)
+    xgb_model = xgb.XGBClassifier(random_state=42)
 
-    # Fit the model
-    xgb_model.fit(X_train, y_train)
+    # Define the hyperparameter grid
+    param_grid = {
+    'n_estimators': [200, 400, 600],  # Number of trees
+    'learning_rate': [0.01, 0.05, 0.1],  # Step size shrinkage
+    'max_depth': [3, 5, 7],  # Maximum depth of trees
+    'subsample': [0.6, 0.8, 1.0],  # Subsample ratio of the training instances
+    'colsample_bytree': [0.4, 0.6, 0.8],  # Subsample ratio of columns for each tree
+    'gamma': [0.1, 0.3, 0.5],  # Minimum loss reduction required to make a further partition
+    'reg_alpha': [0.01, 0.1],  # L1 regularization term on weights
+    'reg_lambda': [0.5, 1.0],  # L2 regularization term on weights
+    }
+    
+    # Define the scoring metric
+    scoring = make_scorer(roc_auc_score, needs_proba=True)
+    
+    # Set up GridSearchCV
+    grid_search = GridSearchCV(estimator=xgb_model, param_grid=param_grid, scoring=scoring, cv=3, verbose=1, n_jobs=16)
+    
+    # Fit the GridSearchCV model
+    grid_search.fit(X_train, y_train)
+    
+    # Get the best model and parameters
+    best_model = grid_search.best_estimator_
+    best_params = grid_search.best_params_
+    print(f"Best Parameters: {best_params}")
 
-    # Predict probabilities on the validation set
-    y_val_pred_proba = xgb_model.predict_proba(X_val)[:, 1]
-
-    # Evaluate AUC
+    # Evaluate the best model on the validation set
+    y_val_pred_proba = best_model.predict_proba(X_val)[:, 1]
     auc_score = roc_auc_score(y_val, y_val_pred_proba)
-    print(f"Validation AUC: {auc_score}")
+    print(f"Validation AUC (Best Model): {auc_score}")
     
     ################################ Test ################################ 
     # Align the columns of the test set with the training set
     test_data_encoded = test_data_encoded.reindex(columns=X_train.columns, fill_value=0)
 
     # Predict probabilities on the test data
-    # test_predictions = rf_model.predict_proba(test_data_encoded)[:, 1]
-    test_predictions = xgb_model.predict_proba(test_data_encoded)[:, 1]
+    test_predictions = best_model.predict_proba(test_data_encoded)[:, 1]
 
     # Create a submission DataFrame
     submission = pd.DataFrame({

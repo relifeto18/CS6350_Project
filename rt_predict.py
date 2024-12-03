@@ -100,7 +100,7 @@ def main():
     })
 
     # Save the submission file
-    submission_file_path = './data/submission_predictions.csv'
+    submission_file_path = './data/submission_predictions_rt.csv'
     submission.to_csv(submission_file_path, index=False)
 
     # Display the file path

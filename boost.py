@@ -93,7 +93,7 @@ def main():
     })
 
     # Save the submission file
-    submission_file_path = './data/submission_predictions_1.csv'
+    submission_file_path = './data/submission_predictions_boost.csv'
     submission.to_csv(submission_file_path, index=False)
 
     # Display the file path

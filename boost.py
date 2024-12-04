@@ -60,6 +60,15 @@ def main():
     'reg_lambda': [0.5, 1.0],  # L2 regularization term on weights
     }
     
+    # 'n estimators': 400
+    # 'learning rate': 0.05
+    # 'max depth': 5
+    # 'subsample': 1.0
+    # 'colsample bytree': 0.6
+    # 'gamma': 0.1
+    # 'reg alpha':0.01
+    # 'reg lambda': 1.0
+    
     # Define the scoring metric
     scoring = make_scorer(roc_auc_score, needs_proba=True)
     

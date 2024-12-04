@@ -1,185 +1,203 @@
-import torch
 import warnings
 import pandas as pd
-import torch.nn as nn
-import torch.optim as optim
+import numpy as np
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+import torch
+import torch.nn as nn
+import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
+# Preprocessing Function
 def preprocess_data(data):
-    # Replace '?' with NaN to mark missing values
     data.replace('?', pd.NA, inplace=True)
-    
-    # Handle missing values
     for column in data.columns:
-        if data[column].isna().sum() > 0:  # Check if column has missing values
-            if data[column].dtype in ['float64', 'int64']:  # For numerical columns
-                median_value = data[column].median()  # Replace with median
-                data[column].fillna(median_value, inplace=True)
-            else:  # For categorical columns
-                mode_value = data[column].mode()[0]  # Replace with mode
-                data[column].fillna(mode_value, inplace=True)
-                    
+        if data[column].isna().sum() > 0:
+            if data[column].dtype in ['float64', 'int64']:
+                data[column].fillna(data[column].median(), inplace=True)
+            else:
+                data[column].fillna(data[column].mode()[0], inplace=True)
     return data
 
+# Load Data
+train_file_path = './data/train_final.csv'
+test_file_path = './data/test_final.csv'
 
-def main():
-    # Load the training and test datasets
-    train_file_path = './data/train_final.csv'
-    test_file_path = './data/test_final.csv'
+train_data = pd.read_csv(train_file_path)
+test_data = pd.read_csv(test_file_path)
 
-    train_data = pd.read_csv(train_file_path)
-    test_data = pd.read_csv(test_file_path)
+# Preprocess the data
+train_data_preprocessed = preprocess_data(train_data)
+test_data_preprocessed = preprocess_data(test_data)
 
-    # Preprocess the training and test data
-    train_data_preprocessed = preprocess_data(train_data)
-    test_data_preprocessed = preprocess_data(test_data)
+# One-hot encoding
+train_data_encoded = pd.get_dummies(train_data_preprocessed, drop_first=True)
+test_data_encoded = pd.get_dummies(test_data_preprocessed.drop(columns=['ID']), drop_first=True)
 
-    # Align categorical features between training and test sets using one-hot encoding
-    full_data = pd.concat([train_data_preprocessed, test_data_preprocessed.drop(columns=['ID'])])
-    full_data_encoded = pd.get_dummies(full_data, drop_first=True)
+# Align columns of test with training data
+test_data_encoded = test_data_encoded.reindex(columns=train_data_encoded.drop(columns=['income>50K']).columns, fill_value=0)
 
-    # Split the full data back into training and test sets
-    X_full = full_data_encoded.drop(columns=['income>50K'], errors='ignore')
-    X_train = X_full.iloc[:len(train_data_preprocessed)]
-    X_test = X_full.iloc[len(train_data_preprocessed):]
-    y_train = train_data_preprocessed['income>50K']
+# Separate features and target
+X = train_data_encoded.drop(columns=['income>50K'])
+y = train_data_encoded['income>50K']
 
-    # Split the training data into training and validation sets
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
-    
-    # Normalize features for neural network compatibility
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_val_scaled = scaler.transform(X_val)
-    X_test_scaled = scaler.transform(X_test)
+# Split into train and validation sets
+X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Convert data to PyTorch tensors
-    X_train_tensor = torch.tensor(X_train_scaled, dtype=torch.float32)
-    y_train_tensor = torch.tensor(y_train.values, dtype=torch.float32)
-    X_val_tensor = torch.tensor(X_val_scaled, dtype=torch.float32)
-    y_val_tensor = torch.tensor(y_val.values, dtype=torch.float32)
-    X_test_tensor = torch.tensor(X_test_scaled, dtype=torch.float32)
+# Normalize continuous features
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_val = scaler.transform(X_val)
+X_test = scaler.transform(test_data_encoded)
 
-    # Create DataLoaders
-    batch_size = 64
+# Convert to PyTorch tensors
+X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
+y_train_tensor = torch.tensor(y_train.values, dtype=torch.float32).unsqueeze(1)
+X_val_tensor = torch.tensor(X_val, dtype=torch.float32)
+y_val_tensor = torch.tensor(y_val.values, dtype=torch.float32).unsqueeze(1)
+X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
+
+# Create DataLoader
+train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+
+# Define the Neural Network
+class NeuralNetwork(nn.Module):
+    def __init__(self, input_size, hidden_sizes, dropout_rate):
+        super(NeuralNetwork, self).__init__()
+        layers = []
+        prev_size = input_size
+        for hidden_size in hidden_sizes:
+            layers.append(nn.Linear(prev_size, hidden_size))
+            layers.append(nn.ReLU())
+            layers.append(nn.Dropout(dropout_rate))
+            prev_size = hidden_size
+        layers.append(nn.Linear(prev_size, 1))
+        layers.append(nn.Sigmoid())
+        self.fc = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.fc(x)
+
+# Train and Evaluate Function
+def train_and_evaluate(hidden_sizes, dropout_rate, learning_rate, batch_size, num_epochs=100):
+    model = NeuralNetwork(input_size=X_train.shape[1], hidden_sizes=hidden_sizes, dropout_rate=dropout_rate)
+    criterion = nn.BCELoss()
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
     train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
-    val_dataset = TensorDataset(X_val_tensor, y_val_tensor)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-
-    # Define the neural network
-    class NeuralNetwork(nn.Module):
-        def __init__(self, input_size):
-            super(NeuralNetwork, self).__init__()
-            # First hidden layer
-            self.fc1 = nn.Linear(input_size, 256)  # Increased neurons for more capacity
-            self.bn1 = nn.BatchNorm1d(256)  # Batch normalization
-            self.relu1 = nn.LeakyReLU(0.1)  # Leaky ReLU activation
-            self.dropout1 = nn.Dropout(0.2)  # Reduced dropout
-
-            # Second hidden layer
-            self.fc2 = nn.Linear(256, 128)
-            self.bn2 = nn.BatchNorm1d(128)
-            self.relu2 = nn.LeakyReLU(0.1)
-            self.dropout2 = nn.Dropout(0.2)
-
-            # Third hidden layer
-            self.fc3 = nn.Linear(128, 64)
-            self.bn3 = nn.BatchNorm1d(64)
-            self.relu3 = nn.LeakyReLU(0.1)
-            self.dropout3 = nn.Dropout(0.2)
-
-            # Output layer
-            self.fc4 = nn.Linear(64, 1)  # Output layer
-            self.sigmoid = nn.Sigmoid()
-
-        def forward(self, x):
-            x = self.relu1(self.bn1(self.fc1(x)))
-            x = self.dropout1(x)
-            x = self.relu2(self.bn2(self.fc2(x)))
-            x = self.dropout2(x)
-            x = self.relu3(self.bn3(self.fc3(x)))
-            x = self.dropout3(x)
-            x = self.sigmoid(self.fc4(x))
-            return x
-
-    # Initialize the model
-    input_size = X_train_tensor.shape[1]
-    model = NeuralNetwork(input_size)
-
-    # Define loss function and optimizer
-    criterion = nn.BCELoss()  # Binary Cross-Entropy Loss
-    optimizer = optim.Adam(model.parameters(), lr=0.0005, weight_decay=1e-4)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)  # Learning rate decay
-
-    # Training loop with stopping condition
-    num_epochs = 50
-    best_val_auc = 0
-    target_auc = 0.93
-    best_model_path = "./data/best_model.pth"
-    submission_file_path = './data/submission_predictions_nn.csv'
+    
+    best_auc = 0
+    best_model_state = None
+    
+    # # Lists to store loss and AUC
+    # epoch_losses = []
+    # epoch_aucs = []
     
     for epoch in range(num_epochs):
         model.train()
-        train_loss = 0
-        for X_batch, y_batch in train_loader:
+        total_loss = 0
+        for batch_X, batch_y in train_loader:
             optimizer.zero_grad()
-            outputs = model(X_batch).squeeze()
-            loss = criterion(outputs, y_batch)
+            outputs = model(batch_X)
+            loss = criterion(outputs, batch_y)
             loss.backward()
             optimizer.step()
-        scheduler.step()
+            total_loss += loss.item()
         
-        # Validation
         model.eval()
-        val_loss = 0
-        y_true = []
-        y_pred = []
         with torch.no_grad():
-            for X_batch, y_batch in val_loader:
-                outputs = model(X_batch).squeeze()
-                loss = criterion(outputs, y_batch)
-                val_loss += loss.item()
-                y_true.extend(y_batch.numpy())
-                y_pred.extend(outputs.numpy())
-        val_loss /= len(val_loader)
-        val_auc = roc_auc_score(y_true, y_pred)
+            val_predictions = model(X_val_tensor).squeeze().numpy()
+            auc_score = roc_auc_score(y_val, val_predictions)
+            
+        # # Store metrics for plotting
+        # epoch_losses.append(total_loss)
+        # epoch_aucs.append(auc_score)
         
-        print(f"Epoch {epoch+1}/{num_epochs} - Train Loss: {train_loss:.4f} - Val Loss: {val_loss:.4f} - Val AUC: {val_auc:.4f}")
+        if auc_score > best_auc:
+            best_auc = auc_score
+            best_model_state = model.state_dict()
         
-        # Save the model if it improves the best AUC
-        if val_auc > best_val_auc:
-            best_val_auc = val_auc
-            torch.save(model.state_dict(), best_model_path)
-            print(f"New best model saved with AUC: {best_val_auc:.4f}")
+        print(f"Epoch {epoch+1}/{num_epochs}, Loss: {total_loss:.4f}, Validation AUC: {auc_score:.4f}")
+    
+    print(f"Best Validation AUC: {best_auc:.4f}")
+    model.load_state_dict(best_model_state)
+    
+    return model, best_auc
+    # return model, best_auc, epoch_losses, epoch_aucs
 
-        # Early stopping condition
-        if val_auc >= target_auc:
-            print(f"Stopping training early as validation AUC reached {val_auc:.4f}, exceeding the target of {target_auc}.")
-            break
-                
-    # Load the best model
-    model.load_state_dict(torch.load(best_model_path))
+# Perform Grid Search
+hidden_sizes_list = [[32], [64], [128], [256], [32, 32], [64, 32], [64, 64], [128, 64], [128, 128], [256, 128], [256, 256], [256, 128, 64]]  # Number of hidden layers and neurons
+dropout_rates = [0.1, 0.2, 0.3, 0.5]  # Dropout probabilities
+learning_rates = [0.01, 0.005, 0.001, 0.0005, 0.0001]  # Learning rates
+batch_sizes = [32, 64, 128, 256]  # Batch sizes
+# hidden_sizes_list = [[64, 32]]  # Number of hidden layers and neurons
+# dropout_rates = [0.1]  # Dropout probabilities
+# learning_rates = [0.005]  # Learning rates
+# batch_sizes = [128]  # Batch sizes
+# num_epochs = 100
+best_model = None
+best_auc = 0
+best_params = None
 
-    # Make predictions on the test set
-    model.eval()
-    with torch.no_grad():
-        test_predictions = model(X_test_tensor).squeeze().numpy()
+for hidden_sizes in hidden_sizes_list:
+    for dropout_rate in dropout_rates:
+        for learning_rate in learning_rates:
+            for batch_size in batch_sizes:
+                print(f"Training with hidden_sizes={hidden_sizes}, dropout_rate={dropout_rate}, "
+                      f"learning_rate={learning_rate}, batch_size={batch_size}")
+                model, auc_score = train_and_evaluate(hidden_sizes, dropout_rate, learning_rate, batch_size)
+                # model, best_auc, losses, aucs = train_and_evaluate(hidden_sizes, dropout_rate, learning_rate, batch_size, num_epochs)
+                if auc_score > best_auc:
+                    best_auc = auc_score
+                    best_model = model
+                    best_params = {
+                        'hidden_sizes': hidden_sizes,
+                        'dropout_rate': dropout_rate,
+                        'learning_rate': learning_rate,
+                        'batch_size': batch_size
+                    }
+                    
+# # Plot Loss and AUC
+# plt.figure(figsize=(12, 5))
 
-    # Prepare submission file
-    submission = pd.DataFrame({
-        "ID": test_data["ID"],
-        "Prediction": test_predictions
-    })
-    submission.to_csv(submission_file_path, index=False)
-    print(f"Submission file saved at: {submission_file_path}")
+# # Loss Plot
+# plt.subplot(1, 2, 1)
+# plt.plot(range(1, num_epochs + 1), losses)
+# plt.title('Loss per Epoch')
+# plt.xlabel('Epoch')
+# plt.ylabel('Loss')
+# plt.grid()
 
+# # AUC Plot
+# plt.subplot(1, 2, 2)
+# plt.plot(range(1, num_epochs + 1), aucs, color='orange')
+# plt.title('AUC per Epoch')
+# plt.xlabel('Epoch')
+# plt.ylabel('AUC')
+# plt.grid()
 
-# Run the main function
-if __name__ == "__main__":
-    main()
+# plt.tight_layout()
+# plt.show()
+
+print()
+print(f"Best Parameters: {best_params}")
+print(f"Best Validation AUC: {best_auc:.4f}")
+
+# Test Predictions
+best_model.eval()
+with torch.no_grad():
+    test_predictions = best_model(X_test_tensor).squeeze().numpy()
+
+# Save the submission
+submission = pd.DataFrame({
+    'ID': test_data_preprocessed['ID'],
+    'Prediction': test_predictions
+})
+submission.to_csv('./data/submission_predictions_nn.csv', index=False)
+print("Submission saved to './data/submission_predictions_nn.csv'")

@@ -132,7 +132,7 @@ def train_and_evaluate(hidden_sizes, dropout_rate, learning_rate, batch_size, nu
     # return model, best_auc, epoch_losses, epoch_aucs
 
 # Perform Grid Search
-hidden_sizes_list = [[32], [64], [128], [256], [32, 32], [64, 32], [64, 64], [128, 64], [128, 128], [256, 128], [256, 256], [256, 128, 64]]  # Number of hidden layers and neurons
+hidden_sizes_list = [[32], [64], [128], [256], [64, 32], [128, 64], [256, 128]]  # Number of hidden layers and neurons
 dropout_rates = [0.1, 0.2, 0.3, 0.5]  # Dropout probabilities
 learning_rates = [0.01, 0.005, 0.001, 0.0005, 0.0001]  # Learning rates
 batch_sizes = [32, 64, 128, 256]  # Batch sizes

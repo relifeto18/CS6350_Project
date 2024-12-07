@@ -73,7 +73,7 @@ def main():
     scoring = make_scorer(roc_auc_score, needs_proba=True)
     
     # Set up GridSearchCV
-    grid_search = GridSearchCV(estimator=xgb_model, param_grid=param_grid, scoring=scoring, cv=3, verbose=1, n_jobs=16)
+    grid_search = GridSearchCV(estimator=xgb_model, param_grid=param_grid, scoring=scoring, cv=3, verbose=1, n_jobs=-1)
     
     # Fit the GridSearchCV model
     grid_search.fit(X_train, y_train)
